@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Lector Documental Moderno — Acelerado por GPU</title>
+  
+  <!-- Motores para Office (Word, PowerPoint y Excel de alta fidelidad) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pptxjs@1.21.1/dist/pptxjs.css">
+  <script src="https://cdn.jsdelivr.net/npm/pptxjs@1.21.1/dist/pptxjs.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxjs@1.21.1/dist/divs2slides.min.js"></script>
+
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css?v=29">
+</head>
+<body>
+
+  <header>
+    <!-- Área Izquierda: Gestión de Documentos -->
+    <div class="header-doc-management">
+      <div class="app-brand-title">
+        <span class="brand-icon">📑</span>
+        <span class="brand-name">Lector</span>
+      </div>
+
+      <div id="tabs-bar"></div>
+
+      <button class="btn-new-tab" id="btn-add-tab" onclick="abrirPDF()" title="Abrir nuevo archivo (Ctrl+O)">
+        ＋
+      </button>
+    </div>
+
+    <!-- Área Derecha: Paneles Documentales y Utilidades -->
+    <div class="header-doc-actions">
+      <button class="nav-icon-btn" id="btn-view-modes" onclick="toggleMenuVistas(event)" title="Vistas de página">
+        📄
+      </button>
+
+      <button class="nav-icon-btn" id="btn-dock-bookmarks" onclick="toggleGaveta('marcadores')" title="Marcadores e Índice">
+        🔖
+      </button>
+
+      <button class="nav-icon-btn" id="btn-add-bookmark-header" onclick="agregarMarcadorActual()" title="Agregar página actual a Marcadores">
+        ➕🔖
+      </button>
+
+      <button class="nav-icon-btn" id="btn-dock-annotations" onclick="toggleGaveta('anotaciones')" title="Resumen de Anotaciones">
+        📝
+      </button>
+
+      <div class="header-v-divider"></div>
+
+      <button id="btn-night-toggle" class="btn-night nav-icon-btn" onclick="toggleModoNoche()" title="Modo Noche (Ctrl+L)">
+        🌙
+      </button>
+
+      <button class="nav-icon-btn" id="btn-fullscreen-header" onclick="togglePantallaCompleta()" title="Pantalla completa">
+        ⛶
+      </button>
+
+      <button class="nav-icon-btn btn-more" id="btn-more-options" onclick="toggleMenuTresPuntos(event)" title="Más opciones">
+        ⋮
+      </button>
+
+      <button id="btn-tabs-counter" onclick="toggleModalPestanasMovil()" title="Documentos abiertos">
+        <span id="tabs-counter-badge">1</span>
+      </button>
+    </div>
+
+    <div id="more-menu-popover">
+      <div class="more-menu-item" onclick="abrirPDF(); cerrarMenuTresPuntos();">
+        <span>📁</span>
+        <span>Abrir archivo</span>
+      </div>
+      <div class="more-menu-item" onclick="guardarPDF(); cerrarMenuTresPuntos();">
+        <span>💾</span>
+        <span>Guardar archivo</span>
+      </div>
+      <div class="more-menu-hr"></div>
+      <div class="more-menu-item" onclick="abrirBarraBusqueda(); cerrarMenuTresPuntos();">
+        <span>🔍</span>
+        <span>Buscar en texto</span>
+      </div>
+      <div class="more-menu-item" onclick="togglePantallaCompleta(); cerrarMenuTresPuntos();">
+        <span>⛶</span>
+        <span id="txt-menu-fullscreen">Pantalla completa</span>
+      </div>
+    </div>
+  </header>
+
+  <input type="file" id="web-file-input" accept=".pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.csv,.rtf,.txt" style="display: none;" onchange="procesarArchivoWeb(event)" multiple>
+
+  <div id="main-content">
+    <div id="color-panel-popover">
+      <span class="color-panel-title">Color de resaltado</span>
+      <div class="color-swatches-grid" id="swatches-container"></div>
+      
+      <div class="opacity-control-row">
+        <div class="opacity-label-wrap">
+          <span>Opacidad</span>
+          <span id="opacity-val-lbl">55%</span>
+        </div>
+        <input type="range" class="opacity-slider" id="opacity-range" min="20" max="90" value="55" oninput="cambiarOpacidad(this.value)">
+      </div>
+    </div>
+
+    <div id="highlight-menu-popover">
+      <button class="hl-menu-btn" id="btn-hl-comment-action" onclick="abrirComentarioDeBloque()">💬 Comentario</button>
+      <div class="divider"></div>
+      <button class="hl-menu-btn" onclick="toggleSubpaletaColorBloque(event)">🎨 Color</button>
+      <div class="divider"></div>
+      <button class="hl-menu-btn btn-del-hl" onclick="eliminarBloqueActivo()">🗑 Eliminar</button>
+
+      <div id="hl-color-subpallete">
+        <div class="color-dot" style="background: #facc15;" onclick="cambiarColorBloqueActivo('#facc15')"></div>
+        <div class="color-dot" style="background: #4ade80;" onclick="cambiarColorBloqueActivo('#4ade80')"></div>
+        <div class="color-dot" style="background: #38bdf8;" onclick="cambiarColorBloqueActivo('#38bdf8')"></div>
+        <div class="color-dot" style="background: #fb923c;" onclick="cambiarColorBloqueActivo('#fb923c')"></div>
+        <div class="color-dot" style="background: #c084fc;" onclick="cambiarColorBloqueActivo('#c084fc')"></div>
+        <div class="color-dot" style="background: #f43f5e;" onclick="cambiarColorBloqueActivo('#f43f5e')"></div>
+      </div>
+    </div>
+
+   <div id="right-drawer">
+      <!-- Tirador para redimensionar el panel arrastrando -->
+      <div id="drawer-resizer" title="Arrastrar para redimensionar panel"></div>
+
+      <div class="drawer-header">
+        <span class="drawer-title" id="drawer-header-title">📝 Resumen de Anotaciones</span>
+        <span class="drawer-close" onclick="cerrarGaveta()">✕</span>
+      </div>
+      <div id="drawer-items-list" class="drawer-content"></div>
+      <button id="drawer-action-btn" class="btn-add-bookmark" onclick="agregarMarcadorActual()">+ Agregar página actual al índice</button>
+    </div>
+
+    <div id="view-modes-popover">
+      <div class="popover-section-title">Páginas por vista</div>
+      <div class="view-popover-item selected" id="opt-single" onclick="setDisposicion('single')">
+        <div class="item-label">
+          <span>📄</span>
+          <span>Vista de una página</span>
+        </div>
+        <span class="item-check">✓</span>
+      </div>
+      <div class="view-popover-item" id="opt-double" onclick="setDisposicion('double')">
+        <div class="item-label">
+          <span>📖</span>
+          <span>Vista de dos páginas</span>
+        </div>
+        <span class="item-check">✓</span>
+      </div>
+
+      <div class="popover-hr"></div>
+
+      <div class="popover-section-title">Navegación</div>
+      <div class="view-popover-item selected" id="opt-scroll" onclick="toggleDesplazamientoContinuo()">
+        <div class="item-label">
+          <span>📜</span>
+          <span>Activar el desplazamiento</span>
+        </div>
+        <span class="item-check">✓</span>
+      </div>
+    </div>
+
+    <div id="viewer-wrapper">
+      <div id="highlight-drag-box"></div>
+      
+      <div id="comment-hover-popup">
+        <div class="comment-popup-header">
+          <div class="comment-popup-author-wrap">
+            <div class="comment-popup-avatar">LS</div>
+            <span class="comment-popup-time" id="comment-popup-time">-</span>
+          </div>
+          <button class="comment-popup-edit-btn" id="btn-edit-inline" onclick="habilitarEdicionInlineComentario()">Editar</button>
+        </div>
+        <div class="comment-popup-text" id="comment-popup-text" contenteditable="false" spellcheck="false"></div>
+        <div class="comment-popup-actions" id="comment-popup-actions">
+          <button class="btn-popup-delete" onclick="eliminarComentarioDesdePopup()" title="Eliminar solo el comentario">🗑️</button>
+          <button class="btn-popup-cancel" onclick="cancelarEdicionInlineComentario()">Cancelar</button>
+          <button class="btn-popup-save" onclick="guardarEdicionInlineComentario()">Guardar</button>
+        </div>
+      </div>
+
+      <div id="recent-docs-view">
+        <div class="recent-container">
+          <div class="recent-hero-header">
+            <div class="recent-title-group">
+              <div class="recent-title-row">
+                <span class="recent-title-icon">🕘</span>
+                <h1 class="recent-main-title">Documentos recientes</h1>
+                <span class="recent-count-pill" id="recent-count-pill">0</span>
+              </div>
+              <p class="recent-subtitle">Retomá tu lectura donde la dejaste · <span class="recent-shortcut-hint">Ctrl + Clic</span> para seleccionar varios archivos a la vez</p>
+            </div>
+
+            <div class="recent-controls-row">
+              <div class="recent-search-box">
+                <span class="recent-search-icon">🔍</span>
+                <input type="text" id="recent-search-input" placeholder="Buscar por título o categoría..." autocomplete="off" spellcheck="false" oninput="filtrarDocumentosRecientes(this.value)">
+              </div>
+
+              <div class="recent-layout-toggle" title="Cambiar vista">
+                <button class="recent-layout-btn active" id="btn-recent-list" onclick="cambiarDisposicionRecientes('list')" title="Vista de lista">☰</button>
+                <button class="recent-layout-btn" id="btn-recent-grid" onclick="cambiarDisposicionRecientes('grid')" title="Vista de cuadrícula">⊞</button>
+              </div>
+
+              <button class="btn-recent-clear" id="btn-clear-recents" onclick="limpiarTodosLosRecientes()" title="Borrar historial de recientes">Limpiar</button>
+
+              <button class="btn-recent-open-primary" onclick="abrirPDF()">
+                <span>📁</span>
+                <span>Abrir archivo</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Chips de filtro rápido por categoría -->
+          <div id="recent-categories-bar" class="recent-categories-bar" style="display: none;"></div>
+
+          <!-- Barra de acción rápida para selección múltiple (Ctrl + Clic) -->
+          <div id="recent-multiselect-bar" class="recent-multiselect-bar" style="display: none;">
+            <div class="multiselect-left">
+              <span class="multiselect-badge" id="multiselect-count-badge">0</span>
+              <span class="multiselect-label" id="multiselect-label-txt">documentos seleccionados</span>
+            </div>
+            <div class="multiselect-actions">
+              <button class="btn-multiselect-open" onclick="abrirRecientesSeleccionados()" title="Abrir todos los seleccionados (Enter)">
+                <span>📂</span>
+                <span id="btn-multiselect-open-txt">Abrir seleccionados</span>
+              </button>
+              <button class="btn-multiselect-tag" onclick="abrirMenuCategorizarSeleccion(event)" title="Asignar categoría a los seleccionados">
+                <span>🏷️</span>
+                <span>Categorizar</span>
+              </button>
+              <button class="btn-multiselect-all" onclick="seleccionarTodosRecientesVisibles()" title="Seleccionar todos los visibles">
+                Seleccionar todos
+              </button>
+              <button class="btn-multiselect-clear" onclick="limpiarSeleccionRecientes()" title="Deseleccionar (Esc)">
+                ✕ Cancelar
+              </button>
+            </div>
+          </div>
+
+          <div id="recent-docs-list" class="recent-list-layout"></div>
+        </div>
+      </div>
+
+      <!-- Menú contextual (3 puntitos verticales) para catalogar tarjeta reciente -->
+      <div id="recent-card-menu" class="recent-card-menu" style="display: none;" onclick="event.stopPropagation()">
+        <div class="recent-menu-header">
+          <span class="recent-menu-title" id="recent-menu-doc-title">Categoría del documento</span>
+          <button class="recent-menu-close" onclick="cerrarMenuTarjetaReciente()">✕</button>
+        </div>
+        <div class="recent-menu-form">
+          <input type="text" id="recent-category-input" placeholder="Ej: Nutrición 2, Anatomía..." autocomplete="off" spellcheck="false" onkeydown="manejarKeydownInputCategoria(event)">
+          <button class="btn-save-category" onclick="guardarCategoriaDesdeMenu()">Guardar</button>
+        </div>
+        <div id="recent-existing-cats" class="recent-existing-cats"></div>
+        <div class="recent-menu-divider"></div>
+        <div class="recent-menu-footer">
+          <button class="recent-menu-action-btn" id="btn-remove-cat-menu" onclick="quitarCategoriaDesdeMenu()">
+            <span>🏷️</span>
+            <span>Quitar categoría</span>
+          </button>
+          <button class="recent-menu-action-btn is-danger" id="btn-delete-recent-menu" onclick="eliminarRecienteDesdeMenu()">
+            <span>🗑️</span>
+            <span>Quitar de recientes</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="stage">
+        <div id="pages-container"></div>
+        <div id="comments-sidebar"></div>
+      </div>
+
+      <!-- Badge sutil y discreto de número de páginas en la esquina inferior izquierda -->
+      <div id="desktop-page-badge" class="desktop-bottom-badge" onclick="abrirSaltoRapido()" title="Ir a página (Ctrl+J)">
+        <span id="v-curr-page">01</span> / <span id="v-total-pages">--</span>
+      </div>
+
+      <!-- Overlays flotantes minimalistas móviles estilo Xodo -->
+      <div id="mobile-page-badge" class="mobile-float-overlay mobile-float-badge" onclick="abrirSaltoRapido()" title="Ir a página">
+        <span id="m-curr-page">1</span> / <span id="m-total-pages">-</span>
+      </div>
+    </div>
+
+    <div id="page-nav-bar">
+      <button class="nav-arrow-btn" onclick="navegarPaginaRelativa(-1)">❮</button>
+      <span id="nav-bar-label" style="font-size: 11px; font-family: monospace; color: #a1a1aa;">1 / 1</span>
+      <button class="nav-arrow-btn" onclick="navegarPaginaRelativa(1)">❯</button>
+    </div>
+  </div>
+
+  <div id="save-confirm-modal">
+    <div class="save-modal-card">
+      <div class="save-modal-title">💾 Cambios sin guardar</div>
+      <div class="save-modal-body">
+        ¿Deseas guardar los cambios realizados en <span class="save-modal-filename" id="modal-filename-txt">documento.pdf</span> antes de cerrar?
+      </div>
+      <div class="save-modal-actions">
+        <button class="btn-modal-cancel" onclick="resolverModalGuardado('cancelar')">Cancelar</button>
+        <button class="btn-modal-discard" onclick="resolverModalGuardado('descartar')">No guardar</button>
+        <button class="btn-modal-save" onclick="resolverModalGuardado('guardar')">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="goto-page-container">
+    <span style="font-size: 12px; color: #a1a1aa; font-weight: 600;">Ir a:</span>
+    <input type="number" id="goto-page-input" min="1" placeholder="Pág">
+    <span id="goto-total-label">/ -</span>
+    <button class="search-btn" onclick="ejecutarSaltoRapido()" style="background: #f97316; border-color: #ea580c; color: #fff;">Ir</button>
+    <button class="search-btn" onclick="cerrarSaltoRapido()" title="Cerrar (Esc)">✕</button>
+  </div>
+
+  <div id="search-bar-container">
+    <input type="text" id="search-input" placeholder="Buscar en documento..." spellcheck="false" autocomplete="off">
+    <span id="search-counter">0/0</span>
+    <button class="search-btn" onclick="navegarBusqueda(-1)" title="Anterior (Shift+Enter)">▲</button>
+    <button class="search-btn" onclick="navegarBusqueda(1)" title="Siguiente (Enter)">▼</button>
+    <button class="search-btn" onclick="cerrarBarraBusqueda()" title="Cerrar (Esc)">✕</button>
+  </div>
+
+  <div id="selection-popover">
+    <button class="pop-btn" onclick="aplicarResaltadoSeleccion(colorResaltadoActivo)">🖍 Resaltar</button>
+    <div class="color-dot" style="background: #fde047;" onclick="aplicarResaltadoSeleccion('#fde047')"></div>
+    <div class="color-dot" style="background: #86efac;" onclick="aplicarResaltadoSeleccion('#86efac')"></div>
+    <div class="color-dot" style="background: #fdba74;" onclick="aplicarResaltadoSeleccion('#fdba74')"></div>
+    <div class="color-dot" style="background: #67e8f9;" onclick="aplicarResaltadoSeleccion('#67e8f9')"></div>
+    <div class="divider"></div>
+    <button class="pop-btn" onclick="aplicarTachadoSeleccion()"><s>S</s> Tachar</button>
+    <div class="divider"></div>
+    <button class="pop-btn" onclick="copiarTextoSeleccionado()">📋 Copiar</button>
+  </div>
+
+  <div id="tabs-mobile-modal" onclick="cerrarModalPestanasMovil(event)">
+    <div class="tabs-modal-card">
+      <div class="tabs-modal-header">
+        <span>Documentos abiertos</span>
+        <button class="tabs-modal-close" onclick="cerrarModalPestanasMovil()">✕</button>
+      </div>
+      <div id="tabs-mobile-list"></div>
+    </div>
+  </div>
+
+  <!-- Botón flotante móvil de herramientas (en raíz del body para z-index independiente) -->
+  <button id="btn-fab-tools" class="btn-fab-tools" onclick="alternarDockHerramientas(event)" title="Herramientas" aria-label="Herramientas">✏️</button>
+
+  <!-- Dock flotante de herramientas (se muestra/oculta con clic derecho) -->
+  <div id="floating-toolbar" class="header-tools-pill floating-dock-pill">
+    <!-- Herramientas de Anotación y Lectura -->
+    <div class="dock-group dock-tools">
+      <button class="float-tool-btn active" id="f-tool-select" onclick="setHerramientaCursor('select')" title="Seleccionar texto (V)">↖</button>
+      <button class="float-tool-btn" id="f-tool-hand" onclick="setHerramientaCursor('hand')" title="Mano / Paneo (H)">✋</button>
+
+      <div class="float-divider"></div>
+
+      <button class="float-tool-btn" id="f-tool-area-hl" onclick="setHerramientaCursor('area-hl')" title="Resaltador de línea">🖍</button>
+      <button class="float-tool-btn" id="f-tool-pen" onclick="setHerramientaCursor('pen')" title="Lápiz marcador libre (S)">✏️</button>
+      <button class="float-tool-btn" id="f-tool-eraser" onclick="setHerramientaCursor('eraser')" title="Goma de borrar (E)">🧹</button>
+      <button class="float-tool-btn" id="f-tool-add-text" onclick="setHerramientaCursor('add-text')" title="Escribir texto aquí (T)">✍️</button>
+      <button class="float-tool-btn" id="f-tool-add-comment" onclick="setHerramientaCursor('add-comment')" title="Agregar comentario al margen (C)">💬</button>
+    </div>
+
+    <div class="float-divider"></div>
+
+    <!-- Color Picker Popover compacto -->
+    <div class="dock-group dock-color-wrapper">
+      <div class="float-color-btn" id="float-color-preview" onclick="togglePanelColor(event)" title="Color y Opacidad" style="background-color: #facc15;"></div>
+    </div>
+  </div>
+
+  <script src="app.js?v=29"></script>
+  <script src="tools.js?v=29"></script>
+  <script src="ui.js?v=29"></script>
+  <script src="viewer.js?v=29"></script>
+
+  <div id="save-toast" class="save-toast">
+    <span class="save-toast-icon">✓</span>
+    <span id="save-toast-msg">Documento guardado</span>
+  </div>
+
+</body>
+</html>
